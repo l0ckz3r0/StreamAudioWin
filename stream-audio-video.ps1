@@ -1,115 +1,88 @@
 <#
-.SINOPSE
-Sistema automático de transmissão de Áudio/Vídeo para Windows
-Repositório: https://github.com/l0ckz3r0/StreamAudioWin
+Stream Audio/Video for Windows
+Repo: https://github.com/l0ckz3r0/StreamAudioWin
 #>
 
-# ===================== CONFIGURAÇÕES =====================
-$portaUsada = 8080
-$ffmpegPath = "C:\ffmpeg\bin\ffmpeg.exe"
-$ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+# === CONFIG ===
+$port = 8080
+$ffmpeg = "C:\ffmpeg\bin\ffmpeg.exe"
+$ffmpeg_url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 
-# ===================== FUNÇÃO: PERMISSÕES =====================
-function Setar-Permissoes {
-    Write-Host "`n🔐 Ajustando permissões..."
-    $chaves = @(
+# === PERMISSIONS ===
+function Set-Permissions {
+    $paths = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam",
         "HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam",
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone",
         "HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone"
     )
-    foreach ($caminho in $chaves) {
-        if (-not (Test-Path $caminho)) { New-Item -Path $caminho -Force | Out-Null }
-        Set-ItemProperty -Path $caminho -Name Value -Value Allow -Type String -Force
+    foreach ($p in $paths) {
+        if (-not (Test-Path $p)) { New-Item -Path $p -Force | Out-Null }
+        Set-ItemProperty -Path $p -Name Value -Value Allow -Type String -Force
     }
-
-    # Regra de Firewall
-    Remove-NetFirewallRule -Name "StreamAudioVideo" -ErrorAction SilentlyContinue | Out-Null
-    New-NetFirewallRule -Name "StreamAudioVideo" -DisplayName "Transmissao Audio Video" `
-        -Direction Inbound -Protocol TCP -LocalPort $portaUsada -Action Allow -Enabled True | Out-Null
+    Remove-NetFirewallRule -Name "StreamAV" -ErrorAction SilentlyContinue | Out-Null
+    New-NetFirewallRule -Name "StreamAV" -DisplayName "Stream AV" -Direction Inbound -Protocol TCP -LocalPort $port -Action Allow -Enabled True | Out-Null
 }
 
-# ===================== FUNÇÃO: INSTALAR FFMPEG =====================
-function Instalar-Ffmpeg {
-    if (Test-Path $ffmpegPath) {
-        Write-Host "`n✅ FFmpeg já instalado"
-        return
-    }
-    Write-Host "`n📥 Baixando e instalando FFmpeg..."
-    $tmpZip = "$env:TEMP\ffmpeg.zip"
-    $tmpDir = "$env:TEMP\ffmpeg_inst"
-
-    Invoke-WebRequest -Uri $ffmpegUrl -OutFile $tmpZip -UseBasicParsing
-    Expand-Archive -Path $tmpZip -DestinationPath $tmpDir -Force
-    $pastaExtraida = Get-ChildItem -Path $tmpDir -Directory -Filter "ffmpeg-*" | Select-Object -First 1
-
+# === INSTALL FFMPEG ===
+function Install-Ffmpeg {
+    if (Test-Path $ffmpeg) { return }
+    $tmp_zip = "$env:TEMP\ffmpeg.zip"
+    $tmp_dir = "$env:TEMP\ffmpeg_inst"
+    Invoke-WebRequest -Uri $ffmpeg_url -OutFile $tmp_zip -UseBasicParsing
+    Expand-Archive -Path $tmp_zip -DestinationPath $tmp_dir -Force
+    $folder = Get-ChildItem -Path $tmp_dir -Directory -Filter "ffmpeg-*" | Select-Object -First 1
     New-Item -ItemType Directory -Path "C:\ffmpeg\bin" -Force | Out-Null
-    Copy-Item -Path "$($pastaExtraida.FullName)\bin\*" -Destination "C:\ffmpeg\bin\" -Recurse -Force
-
+    Copy-Item -Path "$($folder.FullName)\bin\*" -Destination "C:\ffmpeg\bin\" -Recurse -Force
     $env:PATH += ";C:\ffmpeg\bin"
     [Environment]::SetEnvironmentVariable("PATH", $env:PATH, "Machine")
-
-    Remove-Item $tmpZip, $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "✅ FFmpeg instalado com sucesso"
+    Remove-Item $tmp_zip, $tmp_dir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# ===================== FUNÇÃO: DETECTAR DISPOSITIVOS =====================
-function Obter-Dispositivos {
-    Write-Host "`n🔍 Procurando câmera e microfone..."
-    $saida = & $ffmpegPath -list_devices true -f dshow -i dummy 2>&1
-
-    $temCamera = ($saida -match "DirectShow video devices") -and ($saida -match '".+"')
-    $temMicrofone = ($saida -match "DirectShow audio devices") -and ($saida -match '".+"')
-
-    $nomeMic = if ($saida -match '"Microfone[^"]+"') { $matches[0] -replace '"','' } else { $null }
-    $nomeCam = if ($saida -match '"Camera[^"]+"') { $matches[0] -replace '"','' } else { $null }
-
-    return @{
-        TemCamera = $temCamera
-        TemMicrofone = $temMicrofone
-        NomeCamera = $nomeCam
-        NomeMicrofone = $nomeMic
-    }
+# === DETECT DEVICES ===
+function Get-Devices {
+    $out = & $ffmpeg -list_devices true -f dshow -i dummy 2>&1
+    $has_cam = $out -match "DirectShow video devices"
+    $has_mic = $out -match "DirectShow audio devices"
+    return @{ Cam=$has_cam; Mic=$has_mic }
 }
 
-# ===================== EXECUÇÃO PRINCIPAL =====================
+# === GET LOCAL IP ===
+function Get-LocalIP {
+    $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback|VMware|Virtual' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
+    if (-not $ip) { $ip = "10.0.0.92" }
+    return $ip
+}
+
+# === MAIN ===
 Clear-Host
-Write-Host "============================================="
-Write-Host "   STREAM AUDIO/VIDEO AUTOMÁTICO"
-Write-Host "============================================="
+Write-Host "==========================================="
+Write-Host "    STREAM AUDIO / VIDEO AUTOMATICO"
+Write-Host "==========================================="
 
-Setar-Permissoes
-Instalar-Ffmpeg
-$dev = Obter-Dispositivos
+Set-Permissions
+Install-Ffmpeg
+$dev = Get-Devices
+$myip = Get-LocalIP
 
-# Pegar IP válido
-$ipValido = (Get-NetIPAddress -AddressFamily IPv4 |
-            Where-Object { $_.InterfaceAlias -notmatch 'Loopback|VMware|Virtual' -and $_.IPAddress -notlike '169.254.*' } |
-            Select-Object -First 1).IPAddress
-if (-not $ipValido) { $ipValido = "10.0.0.92" }
+Write-Host "`nDetecting devices..."
 
-# Montar comando conforme dispositivo
-if ($dev.TemCamera) {
-    Write-Host "`n📹 Usando CÂMERA: $($dev.NomeCamera)"
-    $cmd = "`"$ffmpegPath`" -y -f dshow -framerate 15 -video_size 1280x720 -i `"video=$($dev.NomeCamera)`" -vcodec mjpeg -q:v 5 -f mpjpeg -listen 1 `"http://0.0.0.0:$portaUsada/stream`""
+if ($dev.Cam) {
+    Write-Host "-> Using CAMERA"
+    $cmd = "`"$ffmpeg`" -y -f dshow -framerate 15 -video_size 1280x720 -i video=`"Integrated Camera`" -vcodec mjpeg -q:v 5 -f mpjpeg -listen 1 `"http://0.0.0.0:$port/stream`""
 }
-elseif ($dev.TemMicrofone) {
-    Write-Host "`n🎤 Usando MICROFONE: $($dev.NomeMicrofone)"
-    $cmd = "`"$ffmpegPath`" -y -f dshow -rtbufsize 2M -i `"audio=$($dev.NomeMicrofone)`" -acodec mp3 -b:a 64k -ar 22050 -ac 1 -f mp3 -listen 1 `"http://0.0.0.0:$portaUsada/stream`""
+elseif ($dev.Mic) {
+    Write-Host "-> Using MICROPHONE"
+    $cmd = "`"$ffmpeg`" -y -f dshow -rtbufsize 2M -i audio=`"@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\wave_{49D00171-596A-469A-9582-F9E720EA5E4F}`" -acodec mp3 -b:a 64k -ar 22050 -ac 1 -f mp3 -listen 1 `"http://0.0.0.0:$port/stream`""
 }
 else {
-    Write-Host "`n❌ Nenhum dispositivo encontrado."
+    Write-Host "-> No device found"
     exit 1
 }
 
-# Mostrar acesso
-Write-Host "`n============================================="
-Write-Host "✅ TRANSMISSÃO INICIADA!"
-Write-Host "============================================="
-Write-Host "📡 Acesso via VLC:"
-Write-Host "http://$ipValido`:$portaUsada/stream"
-Write-Host "`n💡 No VLC: Mídia > Abrir Fluxo de Rede > Colar o link acima"
-Write-Host "============================================="
+Write-Host "`n==========================================="
+Write-Host "STREAM READY"
+Write-Host "Access via VLC: http://$myip`:$port/stream"
+Write-Host "==========================================="
 
-# Iniciar transmissão
 Invoke-Expression $cmd
